@@ -1,9 +1,20 @@
 #!/bin/bash
 # 121817 thru 122217: install script for katello on centos7
+# 033018 fixed hammer yml file
+
+
+# How to use this:
+# Install CentOS 7 (in a VM preferrably) and accept all defaults
+# fill out the first block of variables
+# run as root and profit.  do not use for production
+
+# REQUIRESS:
+# 64-bit architecture.
+# Minimum of two CPU cores. Four CPU cores are recommended.
+# Minimum of 12 GB of physical RAM. 16 GB of physical RAM is recommended.
+# 120GB hard disk (to be safe...)
 
 [[ "`id -u`" == "0" ]] || { echo who do you think you are??; exit 1; }
-
-# epel subscription manager -- check it!
 
 # default user/pass for foreman/katello
 # Note: should probably change after install.
@@ -19,14 +30,8 @@ myos="centos7"
 defaultorg=LAB
 defaultlocation=LAB
 
-# to reset:
+# to reset password:
 # foreman-rake permissions:reset
-
-# REQUIRESS:
-# 64-bit architecture.
-# Minimum of two CPU cores. Four CPU cores are recommended.
-# Minimum of 12 GB of physical RAM. 16 GB of physical RAM is recommended.
-# 120GB hard disk (to be safe...)
 
 # selinux
 # I've found you have to disable selinux during install, but not permanently.
@@ -44,7 +49,6 @@ if [ "$useipv6" == "0" ]; then
 
 	sysctl -p /etc/sysctl.d/disableipv6.conf
 
-
 	# remove ipv6 loopback.
 	# https://access.redhat.com/solutions/1605013
 	sed -i '/::1/d' /etc/hosts
@@ -52,8 +56,6 @@ if [ "$useipv6" == "0" ]; then
 
 
 fi
-
-
 
 # firewall setup
 firewall-cmd --permanent --zone=public \
@@ -73,14 +75,15 @@ firewall-cmd --permanent --zone=public \
 
 firewall-cmd --reload
 
-# check hostname resolution.  see book
+# check hostname resolution.  see book/docs
 ping -c1 localhost || { exit 1; }
 ping -c1 $(hostname -s) || { exit 1; }
 ping -c1 $(hostname -f) || { exit 1; }
 
 
 if [ "$myos" == "rhel7" ]; then
-	yum -y  --disablerepo="*" --enablerepo=rhel-7-server-rpms install yum-utils wget
+	yum -y  --disablerepo="*" --enablerepo=rhel-7-server-rpms \
+		install yum-utils wget
 	yum-config-manager --disable "*"
 	yum-config-manager --enable rhel-7-server-rpms
 	yum-config-manager --enable rhel-7-server-optional-rpms
@@ -108,11 +111,13 @@ yum install -y open-vm-tools pigz pv htop vim git
 yum -y install rpm-build rpmdevtools rpmlint
 
 
-
+# If there are issues, check this
 # https://access.redhat.com/solutions/1442573
 #rpm -e java-1.8.0-openjdk-headless-1.8.0.45-28.b13.el6_6.x86_64 java-1.8.0-openjdk-1.8.0.45-28.b13.el6_6.x86_64
 #yum -y install java-1.7.0-openjdk
 #alternatives --config java
+
+
 
 foreman-installer
 
@@ -126,16 +131,16 @@ setenforce 1
 
 katello-service start
 
-# hammer user add-role --login indeo --role admin
-
+# to add a user:
+# hammer user add-role --login myloginname --role admin
 
 # create a hammer file with default creds.
 mkdir -pv ~/.hammer
 cat > ~/.hammer/cli_config.yml <<EOF
 :foreman:
-	:host:	\'$fqdn\'
-	:username:	\'$user\'
-	:password:	\'$pass\'
+        :host:  '$fqdn'
+        :username:      '$user'
+        :password:      '$pass'
 EOF
 
 
@@ -167,11 +172,8 @@ hammer --csv --csv-separator ";" organization list
 #hammer location create --name "${LOC}"
 #hammer location add-organization --name "${LOC}" --organization "${ORG}"
 
-
 # upload a manifest:
 #hammer subscription upload --organization-label <org_label> --file <path_to_manifest>
-
-
 
 
 # funcitonal test
