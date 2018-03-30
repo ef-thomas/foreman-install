@@ -1,0 +1,181 @@
+#!/bin/bash
+# 121817 thru 122217: install script for katello on centos7
+
+[[ "`id -u`" == "0" ]] || { echo who do you think you are??; exit 1; }
+
+# epel subscription manager -- check it!
+
+# default user/pass for foreman/katello
+# Note: should probably change after install.
+user=admin
+pass=holyshit
+hstnm=foreman
+fqdn=foreman.local
+myip=10.22.29.19
+timesrv=10.22.29.10
+timezone="America/New_York"
+useipv6=0
+myos="centos7"
+defaultorg=LAB
+defaultlocation=LAB
+
+# to reset:
+# foreman-rake permissions:reset
+
+# REQUIRESS:
+# 64-bit architecture.
+# Minimum of two CPU cores. Four CPU cores are recommended.
+# Minimum of 12 GB of physical RAM. 16 GB of physical RAM is recommended.
+# 120GB hard disk (to be safe...)
+
+# selinux
+# I've found you have to disable selinux during install, but not permanently.
+setenforce 1
+
+# hostname must be set correctly and resolve.
+hostnamectl set-hostname $fqdn
+echo "$myip $fqdn $hstnm" >> /etc/hosts
+
+if [ "$useipv6" == "0" ]; then
+
+	# disable ipv6
+	# better approach
+	sysctl -a | grep ipv6 | grep disable | sed 's/ = 0/=1/g' > /etc/sysctl.d/disableipv6.conf
+
+	sysctl -p /etc/sysctl.d/disableipv6.conf
+
+
+	# remove ipv6 loopback.
+	# https://access.redhat.com/solutions/1605013
+	sed -i '/::1/d' /etc/hosts
+	ping6 -c2 ::1 && { exit 0; }
+
+
+fi
+
+
+
+# firewall setup
+firewall-cmd --permanent --zone=public \
+	--add-port=80/tcp \
+	--add-port=443/tcp \
+	--add-port=5647/tcp \
+	--add-port=9090/tcp \
+	--add-port=8140/tcp \
+	--add-port=8443/tcp \
+	--add-port=8000/tcp \
+	--add-port=67/udp \
+	--add-port=68/udp \
+	--add-port=69/udp
+
+# this is a test only...
+#firewall-cmd --permanent --zone=public --add-port=8080/tcp
+
+firewall-cmd --reload
+
+# check hostname resolution.  see book
+ping -c1 localhost || { exit 1; }
+ping -c1 $(hostname -s) || { exit 1; }
+ping -c1 $(hostname -f) || { exit 1; }
+
+
+if [ "$myos" == "rhel7" ]; then
+	yum -y  --disablerepo="*" --enablerepo=rhel-7-server-rpms install yum-utils wget
+	yum-config-manager --disable "*"
+	yum-config-manager --enable rhel-7-server-rpms
+	yum-config-manager --enable rhel-7-server-optional-rpms
+	yum-config-manager --enable rhel-7-server-extras-rpms
+	fi
+
+# prereqs for foreman/katello
+yum -y install http://fedorapeople.org/groups/katello/releases/yum/3.2/katello/el7/x86_64/katello-repos-latest.rpm
+yum -y install http://yum.theforeman.org/releases/1.13/el7/x86_64/foreman-release.rpm
+yum -y install http://yum.puppetlabs.com/puppetlabs-release-el-7.noarch.rpm
+yum -y install http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+yum -y install foreman-release-scl
+yum -y install katello
+
+# time stuff fix
+yum install -y ntp
+service ntpd restart
+timedatectl set-timezone "$timezone" 
+ntpdate -u $timesrv
+
+# other stuff I need
+yum install -y open-vm-tools pigz pv htop vim
+
+# rpm stuff
+yum -y install rpm-build rpmdevtools rpmlint
+
+
+
+# https://access.redhat.com/solutions/1442573
+#rpm -e java-1.8.0-openjdk-headless-1.8.0.45-28.b13.el6_6.x86_64 java-1.8.0-openjdk-1.8.0.45-28.b13.el6_6.x86_64
+#yum -y install java-1.7.0-openjdk
+#alternatives --config java
+
+foreman-installer
+
+foreman-installer --scenario katello \
+	--foreman-admin-username $user --foreman-admin-password $pass
+
+yum -y install subscription-manager
+
+# re-enable selinux
+setenforce 1
+
+katello-service start
+
+# hammer user add-role --login indeo --role admin
+
+
+# create a hammer file with default creds.
+mkdir -pv ~/.hammer
+cat > ~/.hammer/cli_config.yml <<EOF
+:foreman:
+	:host:	\'$fqdn\'
+	:username:	\'$user\'
+	:password:	\'$pass\'
+EOF
+
+
+# change the name of the default org
+hammer organization update --id 1 --name $defaultorg --label defaultorg
+hammer location update --id 1 --name $defaultlocation --description $defaultlocation
+
+# set the default org so you don't have to type it every time with hammer
+hammer defaults add --param-name organization_id --param-value 1
+# same with location...
+hammer defaults add --param-name location_id --param-value 2
+
+hammer defaults list
+
+hammer admin logging --all --level-debug
+katello-service restart
+
+
+# some example hammer commands
+# https://access.redhat.com/documentation/en-us/red_hat_satellite/6.2/html-single/hammer_cli_guide/index
+
+# list as csv:
+hammer --csv --csv-separator ";" organization list
+
+# create a new org:
+#hammer organization create --name "<org_name>" --label "<org_label>" --description "<org_description>"
+
+# create a new location and add it to an org:
+#hammer location create --name "${LOC}"
+#hammer location add-organization --name "${LOC}" --organization "${ORG}"
+
+
+# upload a manifest:
+#hammer subscription upload --organization-label <org_label> --file <path_to_manifest>
+
+
+
+
+# funcitonal test
+
+hammer ping || { echo something went wrong....; exit 1; }
+
+
