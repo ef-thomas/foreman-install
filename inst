@@ -102,7 +102,7 @@ timedatectl set-timezone "$timezone"
 ntpdate -u $timesrv
 
 # other stuff I need
-yum install -y open-vm-tools pigz pv htop vim
+yum install -y open-vm-tools pigz pv htop vim git
 
 # rpm stuff
 yum -y install rpm-build rpmdevtools rpmlint
