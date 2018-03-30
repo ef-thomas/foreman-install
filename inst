@@ -8,7 +8,7 @@
 # default user/pass for foreman/katello
 # Note: should probably change after install.
 user=admin
-pass=holyshit
+pass=admin
 hstnm=foreman
 fqdn=foreman.local
 myip=10.22.29.19
